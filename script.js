@@ -1,4 +1,182 @@
-/* Werwolf Moderator - Single-file logic (Deutsch) */
+// script.js
+
+document.addEventListener('DOMContentLoaded', () => {
+  const players = [];
+  const roles = {}; // roleName: count
+  const playersStatus = {}; // playerName: {alive: true/false, role: 'roleName'}
+  
+  const playerNameInput = document.getElementById('playerName');
+  const addPlayerBtn = document.getElementById('addPlayer');
+  const clearPlayersBtn = document.getElementById('clearPlayers');
+  const playersList = document.getElementById('playersList');
+  const playersStatusList = document.getElementById('playersStatusList');
+  const rolesControlsContainer = document.getElementById('rolesControls');
+  const autoFillVillagersBtn = document.getElementById('autoFillVillagers');
+  const assignRolesBtn = document.getElementById('assignRoles');
+  const clearRolesBtn = document.getElementById('clearRoles');
+  const startNightBtn = document.getElementById('startNight');
+  const startDayBtn = document.getElementById('startDay');
+  const restartGameBtn = document.getElementById('restartGame');
+  const logDiv = document.getElementById('log');
+
+  // Define available roles
+  const availableRoles = ['Dorfbewohner', 'Werwolf', 'Seher', 'Hexe', 'Jäger', 'Witch', 'Bürgermeister'];
+
+  // Helper function to update player display
+  function updatePlayersDisplay() {
+    // Update players list
+    playersList.innerHTML = '';
+    playersStatusList.innerHTML = '';
+
+    players.forEach(name => {
+      // Player list with alive/dead icon
+      const li = document.createElement('li');
+      li.textContent = name;
+      const statusSpan = document.createElement('span');
+      statusSpan.textContent = playersStatus[name]?.alive ? '🟢' : '🔴';
+      li.appendChild(statusSpan);
+      playersList.appendChild(li);
+
+      // Player status and role display
+      const statusLi = document.createElement('li');
+      statusLi.textContent = name + ' (' + (playersStatus[name]?.alive ? 'lebend' : 'tot') + ')';
+
+      const roleSpan = document.createElement('span');
+      roleSpan.className = 'roleTag';
+      roleSpan.textContent = playersStatus[name]?.role || 'Unbekannt';
+      statusLi.appendChild(roleSpan);
+
+      // Role action selector only if alive
+      if (playersStatus[name]?.alive) {
+        const actionSelect = document.createElement('select');
+        actionSelect.innerHTML = `
+          <option value="">Aktion wählen</option>
+          <option value="kill">Töten</option>
+          <option value="save">Retten</option>
+        `;
+        actionSelect.addEventListener('change', () => {
+          // Handle action if needed
+        });
+        statusLi.appendChild(actionSelect);
+      }
+
+      playersStatusList.appendChild(statusLi);
+    });
+
+    // Check for role count mismatch
+    const totalRoles = Object.values(roles).reduce((a, b) => a + b, 0);
+    if (players.length !== totalRoles) {
+      alert('Warnung: Die Anzahl der Rollen stimmt nicht mit der Anzahl der Spieler überein!');
+    }
+  }
+
+  // Add player
+  document.getElementById('addPlayer').addEventListener('click', () => {
+    const name = playerNameInput.value.trim();
+    if (name && !players.includes(name)) {
+      players.push(name);
+      playersStatus[name] = { alive: true, role: null };
+      updatePlayersDisplay();
+      playerNameInput.value = '';
+    }
+  });
+
+  // Clear players
+  document.getElementById('clearPlayers').addEventListener('click', () => {
+    players.length = 0;
+    for (const key in playersStatus) delete playersStatus[key];
+    updatePlayersDisplay();
+  });
+
+  // Generate role dropdowns
+  function generateRoleDropdowns() {
+    rolesControlsContainer.innerHTML = '';
+    for (const role in roles) {
+      const div = document.createElement('div');
+      div.className = 'row';
+
+      const label = document.createElement('label');
+      label.textContent = role;
+      div.appendChild(label);
+
+      const select = document.createElement('select');
+      select.innerHTML = availableRoles.map(r => `<option value="${r}">${r}</option>`).join('');
+      select.value = role;
+      select.addEventListener('change', () => {
+        roles[role] = parseInt(select.value);
+      });
+      div.appendChild(select);
+
+      rolesControlsContainer.appendChild(div);
+    }
+  }
+
+  // Auto-fill villagers
+  document.getElementById('autoFillVillagers').addEventListener('click', () => {
+    // Set all roles to "Dorfbewohner"
+    for (const role in roles) {
+      roles[role] = 0;
+    }
+    // Assign all to Dorfbewohner
+    roles['Dorfbewohner'] = players.length;
+    generateRoleDropdowns();
+  });
+
+  // Assign roles randomly
+  document.getElementById('assignRoles').addEventListener('click', () => {
+    const totalRolesCount = Object.values(roles).reduce((a, b) => a + b, 0);
+    if (players.length !== totalRolesCount) {
+      alert('Die Rollenanzahl stimmt nicht mit der Spielerzahl überein!');
+      return;
+    }
+
+    // Create a list of roles to assign
+    const rolePool = [];
+    for (const role in roles) {
+      for (let i = 0; i < roles[role]; i++) {
+        rolePool.push(role);
+      }
+    }
+
+    // Shuffle players
+    const shuffledPlayers = [...players].sort(() => Math.random() - 0.5);
+
+    // Assign roles
+    for (let i = 0; i < shuffledPlayers.length; i++) {
+      const playerName = shuffledPlayers[i];
+      const role = rolePool[i];
+      playersStatus[playerName].role = role;
+    }
+
+    updatePlayersDisplay();
+  });
+
+  // Reset roles
+  document.getElementById('clearRoles').addEventListener('click', () => {
+    for (const role in roles) {
+      roles[role] = 0;
+    }
+    generateRoleDropdowns();
+  });
+
+  // Initialize roles (example)
+  roles['Dorfbewohner'] = players.length; // default
+  generateRoleDropdowns();
+
+  // Example: check victory condition
+  function checkVictory() {
+    const aliveWolves = Object.values(playersStatus).filter(p => p.role === 'Werwolf' && p.alive).length;
+    const aliveVillagers = Object.values(playersStatus).filter(p => p.role !== 'Werwolf' && p.alive).length;
+    if (aliveWolves === 0) {
+      alert('Die Dorfbewohner haben gewonnen!');
+    } else if (aliveWolves >= aliveVillagers) {
+      alert('Die Werwölfe haben gewonnen!');
+    }
+  }
+
+  // Example: Call checkVictory() after night/day
+  // For demonstration, you can call checkVictory() after relevant game events
+});/* Werwolf Moderator - Single-file logic (Deutsch) */
 "use strict";
 const Roles = {
   UNASSIGNED: "Nicht zugewiesen",
@@ -37,3 +215,4 @@ function handleNightPick(role, idx){ const p=state.players[idx]; switch(role){ c
 function resolveNight(){ if(state.nightChoices.baecker){ const bread=state.nightChoices.baecker; if(bread.quality===2){ const v=bread.owner; if(state.players[v] && state.players[v].alive){ state.players[v].alive=false; addLog(state.players[v].name+" starb durch schlechtes Brot"); } } else { state.players[bread.owner].protectedByGoodBread=true; addLog(state.players[bread.owner].name+" ist durch gutes Brot geschützt"); } } const candidate=state.nightChoices.wolfTarget; addLog("Werwölfe zielten auf: "+(candidate!=null?state.players[candidate].name:'Niemand')); const matratzeIndex=state.players.findIndex(p=>p.role===Roles.DORFMATRATZE && p.alive); let candidateDies=false, matratzeDies=false; if(candidate!=null){ if(matratzeIndex>=0 && candidate===matratzeIndex){ candidateDies=false; addLog("Dorfmatratze direkt angegriffen — überlebt."); } else if(state.nightChoices.matratzeTarget!=null && state.nightChoices.matratzeTarget===candidate){ candidateDies=true; matratzeDies=true; addLog("Dorfmatratze schlief bei Ziel; beide könnten sterben."); } else candidateDies=true; } if(state.nightChoices.witchSave!=null){ if(state.nightChoices.witchSave===candidate){ candidateDies=false; addLog("Hexe rettete "+state.players[candidate].name); } if(matratzeIndex>=0 && state.nightChoices.witchSave===matratzeIndex){ matratzeDies=false; addLog("Hexe rettete die Dorfmatratze"); } } if(state.nightChoices.witchPoison!=null){ const t=state.nightChoices.witchPoison; if(state.players[t] && state.players[t].alive){ state.players[t].alive=false; addLog(state.players[t].name+" wurde von der Hexe vergiftet"); } } if(candidate!=null && state.players[candidate] && state.players[candidate].protectedByGoodBread){ candidateDies=false; addLog(state.players[candidate].name+" wurde durch gutes Brot geschützt"); } if(candidateDies && candidate!=null && state.players[candidate] && state.players[candidate].alive){ state.players[candidate].alive=false; addLog(state.players[candidate].name+" wurde von Werwölfen getötet"); } if(matratzeDies && matratzeIndex>=0 && state.players[matratzeIndex].alive){ state.players[matratzeIndex].alive=false; addLog(state.players[matratzeIndex].name+" (Dorfmatratze) starb"); } state.round++; resetNightChoices(); save(); renderPlayers(); renderLog(); state.phase="day"; save(); }
 function applyDayLynch(index){ if(!state.players[index]||!state.players[index].alive) return "Ungültig"; const p=state.players[index]; p.alive=false; if(p.role===Roles.DORFTROTTEL) return p.name+" war Dorftrottel — Dorftrottel gewinnt sofort!"; return p.name+" wurde gelyncht."; }
 renderPlayers(); renderRolesControls(); renderFlow(); renderLog(); window.ww={state,save,load,resolveNight,renderPlayers,renderFlow};
+

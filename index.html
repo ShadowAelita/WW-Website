@@ -13,6 +13,7 @@
   button { margin: 5px; }
   #playersList, #playersStatusList { list-style: none; padding: 0; }
   .roleTag { margin-left: 10px; font-weight: bold; }
+  #roleMismatchWarning { color: red; margin-top: 10px; font-weight: bold; }
 </style>
 </head>
 <body>
@@ -28,6 +29,8 @@
 <ul id="playersList"></ul>
 <h2>Spieler Status & Rollen</h2>
 <ul id="playersStatusList"></ul>
+
+<div id="roleMismatchWarning"></div> <!-- Warnung hier anzeigen -->
 
 <h2>Rollen konfigurieren</h2>
 <div id="rolesControls" class="wrap"></div>
@@ -57,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const autoFillVillagersBtn = document.getElementById('autoFillVillagers');
   const assignRolesBtn = document.getElementById('assignRoles');
   const clearRolesBtn = document.getElementById('clearRoles');
+  const roleWarningDiv = document.getElementById('roleMismatchWarning');
 
   const availableRoles = ['Dorfbewohner', 'Werwolf', 'Seher', 'Hexe', 'Jäger', 'Bürgermeister'];
 
@@ -79,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const statusLi = document.createElement('li');
       statusLi.textContent = name + ' (' + (playersStatus[name]?.alive ? 'lebend' : 'tot') + ')';
 
-      // Rollenzuweisung
+      // Role display
       const roleSpan = document.createElement('span');
       roleSpan.className = 'roleTag';
       roleSpan.textContent = playersStatus[name]?.role || 'Unbekannt';
@@ -92,6 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       roleSelect.addEventListener('change', () => {
         playersStatus[name].role = roleSelect.value;
+        checkRoleCountMismatch();
       });
       statusLi.appendChild(roleSelect);
 
@@ -109,11 +114,26 @@ document.addEventListener('DOMContentLoaded', () => {
       playersStatusList.appendChild(statusLi);
     });
 
-    // Warnung bei Rollen-Count-Abgleich
+    // Rollen-Count Warnung aktualisieren
+    checkRoleCountMismatch();
+  }
+
+  function checkRoleCountMismatch() {
     const totalRoles = Object.values(roles).reduce((a, b) => a + b, 0);
     if (players.length !== totalRoles) {
-      alert('Warnung: Die Anzahl der Rollen stimmt nicht mit der Anzahl der Spieler überein!');
+      roleWarningDiv.textContent = 'Achtung: Rollenanzahl stimmt nicht mit der Spielerzahl überein!';
+    } else {
+      roleWarningDiv.textContent = '';
     }
+
+    // Alle Rollen und deren Anzahl gleichzeitig anzeigen
+    let rolesText = 'Rollenverteilung: ';
+    for (const role in roles) {
+      rolesText += `${role}: ${roles[role]} | `;
+    }
+    // Entferne das letzte '| '
+    rolesText = rolesText.slice(0, -3);
+    roleWarningDiv.textContent += (roleWarningDiv.textContent ? ' | ' : '') + rolesText;
   }
 
   // Spieler hinzufügen
@@ -152,6 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       select.addEventListener('change', () => {
         roles[role] = parseInt(select.value);
+        checkRoleCountMismatch();
       });
       div.appendChild(select);
 
@@ -166,9 +187,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     roles['Dorfbewohner'] = players.length;
     generateRoleDropdowns();
+    checkRoleCountMismatch();
   });
 
-  // Rollen zufällig verteilen
+  // Rollen zufällig zuweisen
   document.getElementById('assignRoles').addEventListener('click', () => {
     const totalRolesCount = Object.values(roles).reduce((a, b) => a + b, 0);
     if (players.length !== totalRolesCount) {
@@ -192,7 +214,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const role = rolePool[i];
       playersStatus[playerName].role = role;
     }
-
     updatePlayersDisplay();
   });
 
@@ -202,22 +223,13 @@ document.addEventListener('DOMContentLoaded', () => {
       roles[role] = 0;
     }
     generateRoleDropdowns();
+    checkRoleCountMismatch();
   });
 
   // Rollen initialisieren
   roles['Dorfbewohner'] = players.length;
   generateRoleDropdowns();
 
-  // Beispiel Siegbedingungen
-  function checkVictory() {
-    const aliveWolves = Object.values(playersStatus).filter(p => p.role === 'Werwolf' && p.alive).length;
-    const aliveVillagers = Object.values(playersStatus).filter(p => p.role !== 'Werwolf' && p.alive).length;
-    if (aliveWolves === 0) {
-      alert('Die Dorfbewohner haben gewonnen!');
-    } else if (aliveWolves >= aliveVillagers) {
-      alert('Die Werwölfe haben gewonnen!');
-    }
-  }
 });
 </script>
 

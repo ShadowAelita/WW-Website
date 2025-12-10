@@ -1,27 +1,64 @@
-:root{
-  --bg:#f6f7fb; --card:#ffffff; --accent:#006C4A; --text:#111;
-  --muted:#666; --danger:#d9534f;
+body {
+  background: #111;
+  color: #eee;
+  font-family: Arial, sans-serif;
+  padding: 20px;
 }
-@media (prefers-color-scheme: dark){
-  :root{ --bg:#0e0f12; --card:#111214; --accent:#66E6B7; --text:#e9eef0; --muted:#9aa; }
+
+.card {
+  background: #222;
+  padding: 15px;
+  border-radius: 8px;
+  margin: 12px 0;
 }
-*{box-sizing:border-box}
-body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:18px}
-header h1{margin:0 0 12px 0;font-size:20px;color:var(--accent)}
-main{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
-.card{background:var(--card);border-radius:10px;padding:12px;box-shadow:0 2px 6px rgba(0,0,0,0.06)}
-.row{display:flex;gap:8px;align-items:center;margin:8px 0}
-.row.wrap{flex-wrap:wrap}
-input,button,select{padding:8px;border-radius:8px;border:1px solid #ddd;background:transparent;color:var(--text)}
-button{background:linear-gradient(180deg,var(--accent),#004d35);color:#fff;border:none;cursor:pointer}
-button[disabled]{opacity:0.5;cursor:default}
-ul#playersList{list-style:none;padding:0;margin:8px 0;max-height:260px;overflow:auto}
-ul#playersList li{padding:8px;border-radius:6px;border:1px solid #eee;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
-.roleTag{font-size:12px;padding:4px 8px;border-radius:6px;background:#eee;color:var(--muted);margin-left:8px}
-.small{font-size:12px;color:var(--muted)}
-#flowArea{margin-top:12px}
-.choiceList{list-style:none;padding:0;margin:6px 0}
-.choiceList li{padding:6px;border-radius:6px;border:1px solid #eee;margin:4px 0;cursor:pointer}
-.choiceList li.disabled{opacity:0.5;cursor:default}
-.logEntry{padding:6px;border-bottom:1px solid #f0f0f0;font-size:14px}
-footer{margin-top:12px;color:var(--muted);font-size:13px}
+
+.row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+input, button, select {
+  padding: 8px;
+  border-radius: 5px;
+  border: none;
+}
+
+button {
+  background: #444;
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #666;
+}
+
+.warning {
+  background: #800;
+  color: white;
+  padding: 10px;
+  margin-bottom: 15px;
+  border-radius: 5px;
+  text-align: center;
+}
+
+.hidden {
+  display: none;
+}
+
+.player-alive {
+  color: #7f7;
+}
+
+.player-dead {
+  color: #f77;
+  text-decoration: line-through;
+}
+
+.summary {
+  padding: 10px;
+  background: #444;
+  border-radius: 5px;
+  margin-top: 15px;
+}

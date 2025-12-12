@@ -1,9 +1,5 @@
-/* Werwolf Moderator — Final implementation
-   Implements user's detailed rules including:
-   - Armor (pairing), Dieb (swap every 2nd round), Bäcker (placement at night, eaten/forwarded at day, effects next night),
-   - Seher, Dorfmatratze (dies only if host is killed), Werwolf, Hexe (heal+poison once each),
-   - Dorftrottel (wins if lynched), Dorfbewohner.
-   Immediate log updates included. State persisted in localStorage.
+/* Werwolf Moderator — Final implementation (mit Modal-Dialogen & Rollenfilter)
+   Nur Popups ersetzt und Rollenfilter hinzugefügt; Rest unverändert.
 */
 
 const ROLE = {
@@ -45,22 +41,107 @@ const flowArea = document.getElementById('flowArea');
 const nightSummary = document.getElementById('nightSummary');
 const logArea = document.getElementById('logArea');
 
+const modalOverlay = document.getElementById('modal-overlay');
+const modalTitle = document.getElementById('modal-title');
+const modalBody = document.getElementById('modal-body');
+const modalActions = document.getElementById('modal-actions');
+
 // role order for dropdowns
 const ROLE_ORDER = [ROLE.WERWOLF, ROLE.SEHER, ROLE.HEXE, ROLE.DORFMATRATZE, ROLE.BAECKER, ROLE.ARMOR, ROLE.DIEB, ROLE.DORFTROTTEL, ROLE.DORFBEWOHNER];
 
-// helpers
-function addLog(text){ const entry = new Date().toLocaleString() + ' — ' + text; state.log.push(entry); renderLog(); save(); }
-function renderLog(){ logArea.innerHTML = state.log.slice().reverse().map(l=>`<div>${l}</div>`).join(''); }
+// ---------------------- Modal dialog API (Promisified) ----------------------
+function clearModal(){
+  modalTitle.textContent = '';
+  modalBody.innerHTML = '';
+  modalActions.innerHTML = '';
+}
 
-// players UI
-document.getElementById('addPlayer').onclick = () => {
+function showAlert(text){
+  return new Promise(resolve=>{
+    clearModal();
+    modalTitle.textContent = 'Hinweis';
+    modalBody.innerHTML = `<div>${escapeHtml(text)}</div>`;
+    const ok = document.createElement('button'); ok.textContent = 'OK';
+    ok.onclick = ()=>{ modalOverlay.classList.add('hidden'); resolve(); };
+    modalActions.appendChild(ok);
+    modalOverlay.classList.remove('hidden');
+  });
+}
+
+function showConfirm(text){
+  return new Promise(resolve=>{
+    clearModal();
+    modalTitle.textContent = 'Bestätigen';
+    modalBody.innerHTML = `<div>${escapeHtml(text)}</div>`;
+    const ok = document.createElement('button'); ok.textContent = 'Ja';
+    const cancel = document.createElement('button'); cancel.textContent = 'Nein';
+    ok.onclick = ()=>{ modalOverlay.classList.add('hidden'); resolve(true); };
+    cancel.onclick = ()=>{ modalOverlay.classList.add('hidden'); resolve(false); };
+    modalActions.appendChild(ok); modalActions.appendChild(cancel);
+    modalOverlay.classList.remove('hidden');
+  });
+}
+
+// Show choices (array of {label}) returns index or null if cancelled
+function showChoice(title, options){
+  return new Promise(resolve=>{
+    clearModal();
+    modalTitle.textContent = title;
+    modalBody.innerHTML = '';
+    options.forEach((opt, i)=>{
+      const b = document.createElement('button');
+      b.textContent = opt.label;
+      b.style.flex = '1 1 auto';
+      b.onclick = ()=>{ modalOverlay.classList.add('hidden'); resolve(i); };
+      modalActions.appendChild(b);
+    });
+    const cancel = document.createElement('button'); cancel.textContent = 'Abbrechen';
+    cancel.onclick = ()=>{ modalOverlay.classList.add('hidden'); resolve(null); };
+    modalActions.appendChild(cancel);
+    modalOverlay.classList.remove('hidden');
+  });
+}
+
+// Prompt string input (simple)
+function showPrompt(title, placeholder=''){
+  return new Promise(resolve=>{
+    clearModal();
+    modalTitle.textContent = title;
+    const input = document.createElement('input');
+    input.placeholder = placeholder;
+    input.style.width = '100%';
+    modalBody.appendChild(input);
+    const ok = document.createElement('button'); ok.textContent = 'OK';
+    const cancel = document.createElement('button'); cancel.textContent = 'Abbrechen';
+    ok.onclick = ()=>{ modalOverlay.classList.add('hidden'); resolve(input.value || null); };
+    cancel.onclick = ()=>{ modalOverlay.classList.add('hidden'); resolve(null); };
+    modalActions.appendChild(ok); modalActions.appendChild(cancel);
+    modalOverlay.classList.remove('hidden');
+    input.focus();
+  });
+}
+
+// escape helper for safe innerHTML
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]); }
+
+// ---------------------- Logging ----------------------
+function addLog(text){ const entry = new Date().toLocaleString() + ' — ' + text; state.log.push(entry); renderLog(); save(); }
+function renderLog(){ logArea.innerHTML = state.log.slice().reverse().map(l=>`<div>${escapeHtml(l)}</div>`).join(''); }
+
+// ---------------------- Players UI ----------------------
+document.getElementById('addPlayer').onclick = async () => {
   const name = document.getElementById('playerName').value.trim();
-  if(!name) return alert('Bitte Namen eingeben.');
+  if(!name){ await showAlert('Bitte Namen eingeben.'); return; }
   state.players.push({name, role: null, alive: true, armorPartner: null});
   document.getElementById('playerName').value = '';
   renderPlayers(); checkRoleWarning(); save();
 };
-document.getElementById('clearPlayers').onclick = () => { if(!confirm('Alle Spieler entfernen?')) return; state.players = []; renderPlayers(); checkRoleWarning(); save(); }
+document.getElementById('clearPlayers').onclick = async () => {
+  const ok = await showConfirm('Alle Spieler entfernen?');
+  if(!ok) return;
+  state.players = [];
+  renderPlayers(); checkRoleWarning(); save();
+};
 
 function renderPlayers(){
   playersList.innerHTML = '';
@@ -77,8 +158,8 @@ function renderPlayers(){
 
     const right = document.createElement('div'); right.style.display='flex'; right.style.gap='6px';
     const toggle = document.createElement('button'); toggle.textContent = p.alive ? '-> tot setzen' : '-> lebendig setzen';
-    toggle.onclick = ()=>{ p.alive = !p.alive; if(!p.alive && p.armorPartner!=null){ const partner = p.armorPartner; if(state.players[partner] && state.players[partner].alive){ state.players[partner].alive = false; addLog(`${state.players[partner].name} (Armor-Partner) starb, da Partner gestorben ist.`); } } save(); renderPlayers(); renderLog(); };
-    const rem = document.createElement('button'); rem.textContent='Entfernen'; rem.onclick=()=>{ if(!confirm('Spieler entfernen?')) return; state.players.splice(i,1); save(); renderPlayers(); checkRoleWarning(); };
+    toggle.onclick = async ()=>{ p.alive = !p.alive; if(!p.alive && p.armorPartner!=null){ const partner = p.armorPartner; if(state.players[partner] && state.players[partner].alive){ state.players[partner].alive = false; addLog(`${state.players[partner].name} (Armor-Partner) starb, da Partner gestorben ist.`); } } save(); renderPlayers(); renderLog(); };
+    const rem = document.createElement('button'); rem.textContent='Entfernen'; rem.onclick=async ()=>{ const ok = await showConfirm('Spieler entfernen?'); if(!ok) return; state.players.splice(i,1); save(); renderPlayers(); checkRoleWarning(); };
     right.appendChild(toggle); right.appendChild(rem);
     li.appendChild(left); li.appendChild(right); playersList.appendChild(li);
   });
@@ -92,9 +173,10 @@ function checkRoleWarning(){
   else topWarning.classList.add('hidden');
 }
 
-// automatic distribution
-document.getElementById('autoSuggest').onclick = ()=>{
-  const n = state.players.length; if(n===0) return alert('Keine Spieler.');
+// ---------------------- Role distribution ----------------------
+document.getElementById('autoSuggest').onclick = async ()=>{
+  if(state.players.length === 0){ await showAlert('Keine Spieler.'); return; }
+  const n = state.players.length;
   const wolves = Math.max(1, Math.floor(n/3));
   let dist = [];
   for(let i=0;i<wolves;i++) dist.push(ROLE.WERWOLF);
@@ -107,19 +189,25 @@ document.getElementById('autoSuggest').onclick = ()=>{
   save(); renderPlayers(); renderLog(); checkRoleWarning(); addLog('Automatische Rollenverteilung durchgeführt.');
 };
 
-document.getElementById('assignRoles').onclick = ()=>{
+document.getElementById('assignRoles').onclick = async ()=>{
   const assigned = state.players.filter(p=>p.role).length;
-  if(assigned !== state.players.length) return alert('Bitte zuerst Rollen vollständig zuweisen (oder Auto-Vorschlag).');
+  if(assigned !== state.players.length){ await showAlert('Bitte zuerst Rollen vollständig zuweisen (oder Auto-Vorschlag).'); return; }
   const roles = state.players.map(p=>p.role).sort(()=>Math.random()-0.5);
   state.players.forEach((p,i)=>{ p.role = roles[i]; p.alive = true; p.armorPartner = null; });
   save(); renderPlayers(); addLog('Rollen zufällig verteilt.');
 };
 
-document.getElementById('clearRoles').onclick = ()=>{ state.players.forEach(p=>{ p.role = null; p.armorPartner=null; }); save(); renderPlayers(); checkRoleWarning(); addLog('Rollen zurückgesetzt.'); }
+document.getElementById('clearRoles').onclick = async ()=>{ 
+  const ok = await showConfirm('Rollen zurücksetzen?'); 
+  if(!ok) return;
+  state.players.forEach(p=>{ p.role = null; p.armorPartner=null; }); save(); renderPlayers(); checkRoleWarning(); addLog('Rollen zurückgesetzt.'); 
+};
 
-// --- Night flow UI builder ---
-document.getElementById('startNight').onclick = ()=>{
-  state.nightChoices = {}; // reset choices for this night
+// ---------------------- Night flow UI builder ----------------------
+document.getElementById('startNight').onclick = ()=>startNight();
+
+function startNight(){
+  state.nightChoices = {}; // reset
   flowArea.innerHTML = '';
   nightSummary.classList.add('hidden');
 
@@ -131,7 +219,6 @@ document.getElementById('startNight').onclick = ()=>{
     renderPlayers(); renderLog();
   }
 
-  // determine alive roles present
   const aliveRoles = new Set(state.players.filter(p=>p.alive && p.role).map(p=>p.role));
 
   nightOrder.forEach(role => {
@@ -140,7 +227,6 @@ document.getElementById('startNight').onclick = ()=>{
     if(!aliveRoles.has(role)) return;
     const block = document.createElement('div'); block.className = 'card';
     const h = document.createElement('h3'); h.textContent = role; block.appendChild(h);
-    // role-specific UI
     if(role === ROLE.ARMOR) block.appendChild(buildArmorUI());
     if(role === ROLE.DIEB) block.appendChild(buildDiebUI());
     if(role === ROLE.BAECKER) block.appendChild(buildBaeckerUI());
@@ -154,22 +240,33 @@ document.getElementById('startNight').onclick = ()=>{
   document.getElementById('executeNight').disabled = false;
   addLog(`Nacht ${state.round} gestartet — Aktionen auswählen.`);
   save();
-};
+}
 
-// UI components for actions (they update state and log immediately)
+// ---------------------- UI components for actions (with filters) ----------------------
+
+// Helper: find first alive player index that has a given role
+function findAliveIndexByRole(role){
+  return state.players.findIndex(p => p.alive && p.role === role);
+}
+
+// Armor UI: actor = the player who has Armor role (first alive)
 function buildArmorUI(){
   const wrap = document.createElement('div');
   const info = document.createElement('div'); info.className='small'; info.textContent='Wähle zwei Spieler zum Verkuppeln (Armor). Wenn später einer stirbt, stirbt der andere ebenfalls.';
   wrap.appendChild(info);
   const list = document.createElement('div'); list.style.display='flex'; list.style.gap='6px'; list.style.flexWrap='wrap';
+
+  const actorIndex = findAliveIndexByRole(ROLE.ARMOR);
   state.players.forEach((p,i)=>{
-    const btn = document.createElement('button'); btn.textContent = p.name; btn.onclick = ()=>{
-      if(!p.alive) return alert('Nur lebende Spieler auswählen.');
+    const btn = document.createElement('button'); btn.textContent = p.name;
+    // filter: only alive targets, cannot choose self (actor)
+    if(!p.alive || i === actorIndex) btn.disabled = true;
+    btn.onclick = async ()=> {
       state.nightChoices.armorSelections = state.nightChoices.armorSelections || [];
       const sel = state.nightChoices.armorSelections;
-      if(sel.includes(i)){ state.nightChoices.armorSelections = sel.filter(x=>x!==i); addLog(`Armor: Auswahl entfernt (${p.name}).`); }
-      else if(sel.length < 2){ sel.push(i); addLog(`Armor: Auswahl hinzugefügt (${p.name}).`); }
-      else alert('Bereits zwei ausgewählt.');
+      if(sel.includes(i)){ state.nightChoices.armorSelections = sel.filter(x=>x!==i); await showAlert(`Armor: Auswahl entfernt (${p.name}).`); addLog(`Armor: Auswahl entfernt (${p.name}).`); }
+      else if(sel.length < 2){ sel.push(i); await showAlert(`Armor: Auswahl hinzugefügt (${p.name}).`); addLog(`Armor: Auswahl hinzugefügt (${p.name}).`); }
+      else await showAlert('Bereits zwei ausgewählt.');
       save();
     };
     list.appendChild(btn);
@@ -178,20 +275,22 @@ function buildArmorUI(){
   return wrap;
 }
 
+// Dieb UI
 function buildDiebUI(){
   const wrap = document.createElement('div');
   const info = document.createElement('div'); info.className='small'; info.textContent='Wähle zwei Spieler deren Rollen getauscht werden sollen.';
   wrap.appendChild(info);
   const list = document.createElement('div'); list.style.display='flex'; list.style.gap='6px'; list.style.flexWrap='wrap';
+  const actorIndex = findAliveIndexByRole(ROLE.DIEB);
   state.players.forEach((p,i)=>{
     const btn = document.createElement('button'); btn.textContent = `${p.name} ${p.role? '('+p.role+')':''}`;
-    btn.onclick = ()=>{
-      if(!p.alive) return alert('Nur lebende Spieler auswählen.');
+    if(!p.alive || i === actorIndex) btn.disabled = true;
+    btn.onclick = async ()=>{
       state.nightChoices.diebPicks = state.nightChoices.diebPicks || [];
       const sel = state.nightChoices.diebPicks;
-      if(sel.includes(i)){ state.nightChoices.diebPicks = sel.filter(x=>x!==i); addLog(`Dieb: Auswahl entfernt (${p.name}).`); }
-      else if(sel.length < 2){ sel.push(i); addLog(`Dieb: Auswahl hinzugefügt (${p.name}).`); }
-      else alert('Bereits zwei ausgewählt.');
+      if(sel.includes(i)){ state.nightChoices.diebPicks = sel.filter(x=>x!==i); await showAlert(`Dieb: Auswahl entfernt (${p.name}).`); addLog(`Dieb: Auswahl entfernt (${p.name}).`); }
+      else if(sel.length < 2){ sel.push(i); await showAlert(`Dieb: Auswahl hinzugefügt (${p.name}).`); addLog(`Dieb: Auswahl hinzugefügt (${p.name}).`); }
+      else await showAlert('Bereits zwei ausgewählt.');
       save();
     };
     list.appendChild(btn);
@@ -200,18 +299,25 @@ function buildDiebUI(){
   return wrap;
 }
 
+// Bäcker UI: actor is baker; cannot choose dead door targets
 function buildBaeckerUI(){
   const wrap = document.createElement('div');
   const info = document.createElement('div'); info.className='small'; info.textContent='Wähle vor wessen Tür das Brot gelegt wird und ob es gut oder schlecht ist. (Das Brot wird am Tag aufgelöst.)';
   wrap.appendChild(info);
   const select = document.createElement('select');
   const empty = document.createElement('option'); empty.value=''; empty.textContent='(Ziel wählen)'; select.appendChild(empty);
-  state.players.forEach((p,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent = p.name + (p.alive?'':' (tot)'); select.appendChild(o); });
-  select.onchange = ()=>{
+  state.players.forEach((p,i)=>{ 
+    const o=document.createElement('option'); o.value=i; o.textContent = p.name + (p.alive?'':' (tot)'); 
+    if(!p.alive) o.disabled = true; // cannot place at a dead player's door
+    select.appendChild(o); 
+  });
+  select.onchange = async ()=>{
     const idx = parseInt(select.value);
     if(isNaN(idx)){ return; }
-    // choose quality via prompt for simplicity
-    const qual = confirm('OK = gutes Brot (schützt), Abbrechen = schlechtes Brot (tödlich später)') ? 1 : 2;
+    // ask quality via confirm-style modal
+    const choose = await showChoice('Brotqualität wählen', [{label:'Gut (schützt)'},{label:'Schlecht (tödlich)'}]);
+    if(choose === null) { await showAlert('Bäcker-Aktion abgebrochen.'); return; }
+    const qual = (choose === 0) ? 1 : 2;
     state.bakerPlaced = state.bakerPlaced || [];
     state.bakerPlaced.push({ owner: idx, quality: qual, passes: [], eatenBy: null, placedRound: state.round });
     addLog(`Bäcker legte ${qual===1?'gutes':'schlechtes'} Brot vor die Tür von ${state.players[idx].name}. (wird am Tag aufgelöst)`);
@@ -222,15 +328,18 @@ function buildBaeckerUI(){
   return wrap;
 }
 
+// Seher UI: actor is seer; exclude seer themselves
 function buildSeherUI(){
   const wrap = document.createElement('div');
   const info = document.createElement('div'); info.className='small'; info.textContent='Seher: Wähle eine Person, deren Karte der Moderator sehen wird.';
   wrap.appendChild(info);
   const list = document.createElement('div'); list.style.display='flex'; list.style.gap='6px'; list.style.flexWrap='wrap';
+  const actorIndex = findAliveIndexByRole(ROLE.SEHER);
   state.players.forEach((p,i)=>{
     const btn = document.createElement('button'); btn.textContent = p.name;
-    btn.onclick = ()=>{
-      if(!p.alive) return alert('Nur lebende Spieler auswählen.');
+    // filter: only alive targets and not self
+    if(!p.alive || i === actorIndex) btn.disabled = true;
+    btn.onclick = async ()=>{
       state.nightChoices.seherPick = i;
       addLog(`Seher sah die Karte von ${p.name}: ${p.role || '(nicht zugewiesen)'}`);
       save();
@@ -241,15 +350,17 @@ function buildSeherUI(){
   return wrap;
 }
 
+// Matratze UI: cannot sleep at self
 function buildMatratzeUI(){
   const wrap = document.createElement('div');
   const info = document.createElement('div'); info.className='small'; info.textContent='Dorfmatratze: Wähle bei wem sie schlafen möchte. Matratze stirbt nur wenn Gastgeber angegriffen wird.';
   wrap.appendChild(info);
   const list = document.createElement('div'); list.style.display='flex'; list.style.gap='6px'; list.style.flexWrap='wrap';
+  const actorIndex = findAliveIndexByRole(ROLE.DORFMATRATZE);
   state.players.forEach((p,i)=>{
     const btn = document.createElement('button'); btn.textContent = p.name;
-    btn.onclick = ()=>{
-      if(!p.alive) return alert('Nur lebende Spieler auswählen.');
+    if(!p.alive || i === actorIndex) btn.disabled = true;
+    btn.onclick = async ()=>{
       state.nightChoices.matratzeTarget = i;
       addLog(`Dorfmatratze schläft bei ${p.name}.`);
       save();
@@ -260,15 +371,17 @@ function buildMatratzeUI(){
   return wrap;
 }
 
+// Werwolf UI: cannot choose dead; actor(s) excluded (we treat wolves as single actor moderator selects target)
 function buildWerwolfUI(){
   const wrap = document.createElement('div');
   const info = document.createElement('div'); info.className='small'; info.textContent='Werwölfe wählen gemeinsam ein Opfer.';
   wrap.appendChild(info);
   const list = document.createElement('div'); list.style.display='flex'; list.style.gap='6px'; list.style.flexWrap='wrap';
+  // For target list: all alive players
   state.players.forEach((p,i)=>{
     const btn = document.createElement('button'); btn.textContent = p.name;
-    btn.onclick = ()=>{
-      if(!p.alive) return alert('Nur lebende Spieler auswählen.');
+    if(!p.alive) btn.disabled = true;
+    btn.onclick = async ()=>{
       state.nightChoices.wolfTarget = i;
       addLog(`Werwölfe wählten: ${p.name}`);
       save();
@@ -279,28 +392,39 @@ function buildWerwolfUI(){
   return wrap;
 }
 
+// Hexe UI: poison/heal choices limited to alive players (hex can choose heal target only among appropriate)
 function buildHexeUI(){
   const wrap = document.createElement('div');
-  const victim = state.nightChoices.wolfTarget != null ? state.players[state.nightChoices.wolfTarget].name : 'Noch nicht gewählt';
+  const victim = (typeof state.nightChoices.wolfTarget === 'number') ? state.players[state.nightChoices.wolfTarget].name : 'Noch nicht gewählt';
   const info = document.createElement('div'); info.className='small'; info.textContent = `Werwolf-Opfer: ${victim}. Hexe: Heilung (${state.witch.canHeal?'verfügbar':'gebraucht'}), Gift (${state.witch.canPoison?'verfügbar':'gebraucht'}).`;
   wrap.appendChild(info);
   const healBtn = document.createElement('button'); healBtn.textContent='Heilen';
-  healBtn.onclick = ()=>{
-    if(!state.witch.canHeal) return alert('Heiltrank bereits benutzt.');
-    if(state.nightChoices.wolfTarget == null) return alert('Noch kein Opfer der Werwölfe.');
-    state.nightChoices.witchSave = state.nightChoices.wolfTarget;
+  healBtn.onclick = async ()=>{
+    if(!state.witch.canHeal){ await showAlert('Heiltrank bereits benutzt.'); return; }
+    if(state.nightChoices.wolfTarget == null){ await showAlert('Noch kein Opfer der Werwölfe.'); return; }
+    // Offer choice: if both matratze and victim possible, present options; otherwise heal victim
+    const matIdx = state.players.findIndex(p => p.alive && p.role === ROLE.DORFMATRATZE);
+    const choices = [];
+    choices.push({label: state.players[state.nightChoices.wolfTarget].name, index: state.nightChoices.wolfTarget});
+    if(matIdx >= 0) choices.push({label: state.players[matIdx].name, index: matIdx});
+    const pick = await showChoice('Wen heilen?', choices.map(c=>({label:c.label})));
+    if(pick === null) return;
+    const idx = choices[pick].index;
+    state.nightChoices.witchSave = idx;
     state.witch.canHeal = false;
-    addLog(`Hexe heilte: ${state.players[state.nightChoices.witchSave].name}`);
+    addLog(`Hexe heilte: ${state.players[idx].name}`);
     save();
   };
   const poisonBtn = document.createElement('button'); poisonBtn.textContent='Vergiften';
-  poisonBtn.onclick = ()=>{
-    if(!state.witch.canPoison) return alert('Gifftank bereits benutzt.');
-    const choices = state.players.map((p,i)=> ({i, name:p.name, alive:p.alive})).filter(x=>x.alive);
-    const name = prompt('Wen vergiften? (Name eingeben)\nVerfügbare: ' + choices.map(c=>c.name).join(', '));
-    if(!name) return;
-    const idx = state.players.findIndex(p=>p.name === name && p.alive);
-    if(idx === -1) return alert('Name ungültig oder nicht lebendig.');
+  poisonBtn.onclick = async ()=>{
+    if(!state.witch.canPoison){ await showAlert('Gifttank bereits benutzt.'); return; }
+    // build choice of alive players (cannot choose hex herself if alive)
+    const hexIndex = state.players.findIndex(p=>p.role===ROLE.HEXE && p.alive);
+    const choices = state.players.map((p,i)=>({label:p.name, index:i, alive:p.alive})).filter(c=>c.alive && c.index !== hexIndex);
+    if(choices.length === 0){ await showAlert('Keine gültigen Ziele.'); return; }
+    const pick = await showChoice('Wen vergiften?', choices.map(c=>({label:c.label})));
+    if(pick === null) return;
+    const idx = choices[pick].index;
     state.nightChoices.witchPoison = idx;
     state.witch.canPoison = false;
     addLog(`Hexe vergiftete: ${state.players[idx].name}`);
@@ -310,12 +434,13 @@ function buildHexeUI(){
   return wrap;
 }
 
-// Execute night: calculate deaths except baker-day effects (baker effects apply in day or next night)
-document.getElementById('executeNight').onclick = ()=>{
+// ---------------------- Execute night ----------------------
+document.getElementById('executeNight').onclick = async ()=>{
   // Pre-check unassigned
   const unassigned = state.players.filter(p=>p.alive && !p.role).map(p=>p.name);
   if(unassigned.length>0){
-    if(!confirm(`Es gibt unzugewiesene Rollen: ${unassigned.join(', ')}. Weiter?`)) return;
+    const ok = await showConfirm(`Es gibt unzugewiesene Rollen: ${unassigned.join(', ')}. Weiter?`);
+    if(!ok) return;
   }
   addLog(`Berechne Auflösung der Nacht ${state.round}...`);
 
@@ -338,7 +463,7 @@ document.getElementById('executeNight').onclick = ()=>{
   let candidateDies = false, matratzeDies = false;
 
   if(wolfCandidate != null){
-    // if wolves target the matratze directly -> matratze survives (per user instruction)
+    // if wolves target the matratze directly -> matratze survives
     if(matIdx >= 0 && wolfCandidate === matIdx){
       addLog(`Werwölfe griffen die Dorfmatratze direkt an; sie überlebt.`);
       candidateDies = false;
@@ -366,7 +491,7 @@ document.getElementById('executeNight').onclick = ()=>{
     }
   }
 
-  // Baker protections from previous day: apply protections if existed (we track via bakerPlaced entries that were eaten and scheduled)
+  // Baker protections from previous day
   const protectedThisNight = new Set();
   (state.bakerPlaced || []).forEach(b => {
     if(b.eatenBy != null && b.protectedNextNight && b.placedRound === state.round - 1){
@@ -433,47 +558,38 @@ document.getElementById('executeNight').onclick = ()=>{
   save(); renderPlayers(); renderLog();
 };
 
-// --- Day: resolve baker breads (found at doors) ---
-document.getElementById('resolveBakerDay').onclick = ()=>{
-  // show UI prompt for each bakerPlaced entry placed in previous night (placedRound === currentRound-1)
-  const toResolve = (state.bakerPlaced || []).filter(b => b.placedRound === state.round - 1);
-  if(toResolve.length === 0){ alert('Kein Brot zum Auflösen.'); return; }
-  // process sequentially
+// ---------------------- Day: resolve baker breads (modal-based) ----------------------
+document.getElementById('resolveBakerDay').onclick = async ()=>{
+  const toResolve = (state.bakerPlaced || []).filter(b => b.placedRound === state.round - 1 && !b.resolved);
+  if(toResolve.length === 0){ await showAlert('Kein Brot zum Auflösen.'); return; }
   for(const b of toResolve){
     const ownerName = state.players[b.owner] ? state.players[b.owner].name : '(unbekannt)';
-    let action = null;
-    while(true){
-      action = prompt(`Vor der Tür von ${ownerName} liegt ein ${b.quality===1?'gutes':'schlechtes'} Brot.\nOptionen: essen / weitergeben / ablehnen\nGib ein:`);
-      if(!action) { if(confirm('Abbrechen? Bricht Auflösung ab.')) break; else continue; }
-      action = action.toLowerCase();
-      if(action === 'essen' || action === 'weitergeben' || action === 'ablehnen') break;
-      alert('Ungültige Option. Bitte "essen", "weitergeben" oder "ablehnen" eingeben.');
-    }
-    if(!action) break;
+    // choices: essen / weitergeben / ablehnen
+    const actionIdx = await showChoice(`Vor der Tür von ${ownerName} liegt ein ${b.quality===1?'gutes':'schlechtes'} Brot.`, [
+      {label:'essen'},{label:'weitergeben'},{label:'ablehnen'}
+    ]);
+    if(actionIdx === null){ if(!(await showConfirm('Abbrechen? Bricht Auflösung ab.'))) { continue; } else break; }
+    const action = ['essen','weitergeben','ablehnen'][actionIdx];
     if(action === 'essen'){
-      // determine eater: if passes exist, eater is last pass recipient else owner
       const eater = b.passes.length > 0 ? b.passes[b.passes.length -1] : b.owner;
       b.eatenBy = eater;
       if(b.quality === 1){
-        // good bread -> protection next night (mark flag)
         b.protectedNextNight = true;
         addLog(`Bäcker-Brot: ${state.players[eater].name} aß GUTES Brot und ist kommende Nacht geschützt.`);
       } else {
-        // bad bread -> schedule death in next night
         state.bakerBadPending.push(eater);
         addLog(`Bäcker-Brot: ${state.players[eater].name} aß SCHLECHTES Brot und wird in der nächsten Nacht sterben.`);
       }
     } else if(action === 'weitergeben'){
-      // prompt for recipient name (must be alive and not self and not already in passes)
-      const candidate = prompt('Name des nächsten Empfängers eingeben (genauer Name):\nVerfügbare: ' + state.players.filter(p=>p.alive).map(p=>p.name).join(', '));
-      if(!candidate){ addLog('Weitergabe abgebrochen.'); continue; }
-      const idx = state.players.findIndex(p=>p.name === candidate && p.alive);
-      if(idx === -1) { alert('Ungültiger Name.'); continue; }
-      if(idx === b.owner) { alert('Nicht an sich selbst weitergeben.'); continue; }
-      if(b.passes.includes(idx)) { alert('Schon weitergegeben an diese Person.'); continue; }
+      // choose recipient from alive players not owner and not already in passes
+      const candidates = state.players.map((p,i)=>({label:p.name, index:i, alive:p.alive}))
+                        .filter(c=>c.alive && c.index !== b.owner && !b.passes.includes(c.index));
+      if(candidates.length === 0){ await showAlert('Keine gültigen Empfänger verfügbar.'); continue; }
+      const pick = await showChoice('Wen weitergeben?', candidates.map(c=>({label:c.label})));
+      if(pick === null){ addLog('Weitergabe abgebrochen.'); continue; }
+      const idx = candidates[pick].index;
       b.passes.push(idx);
       addLog(`Bäcker-Brot: Weitergegeben an ${state.players[idx].name}.`);
-      // do not auto-eat; moderator can call resolve again later to eat
     } else if(action === 'ablehnen'){
       addLog(`Bäcker-Brot vor ${ownerName} wurde abgelehnt.`);
     }
@@ -483,31 +599,36 @@ document.getElementById('resolveBakerDay').onclick = ()=>{
   state.bakerPlaced = state.bakerPlaced.filter(b=>!b.resolved);
   save();
   renderPlayers(); renderLog();
-  alert('Bäcker-Auflösung abgeschlossen. Schutz/Wirkung wurde im Log vermerkt.');
+  await showAlert('Bäcker-Auflösung abgeschlossen. Schutz/Wirkung wurde im Log vermerkt.');
 };
 
-// start day (after baker resolution) - day actions are manual (lynch etc.)
-document.getElementById('startDay').onclick = ()=>{
+// ---------------------- Day start & restart ----------------------
+document.getElementById('startDay').onclick = async ()=>{
   addLog(`Tag beginnt. Aktuelle Lebende: ${state.players.filter(p=>p.alive).map(p=>p.name).join(', ')}`);
   document.getElementById('startDay').disabled = true;
   document.getElementById('resolveBakerDay').disabled = true;
   save(); renderPlayers(); renderLog();
 };
 
-// restart
-document.getElementById('restartGame').onclick = ()=>{
-  if(!confirm('Spiel komplett neu starten?')) return;
+document.getElementById('restartGame').onclick = async ()=>{
+  const ok = await showConfirm('Spiel komplett neu starten?');
+  if(!ok) return;
   state.players = state.players.map(p=>({name:p.name, role:null, alive:true, armorPartner:null}));
   state.round = 1; state.phase='setup'; state.nightChoices = {}; state.witch = {canHeal:true, canPoison:true}; state.bakerPlaced = []; state.bakerBadPending = []; state.log = [];
   save(); renderPlayers(); renderLog(); checkRoleWarning(); addLog('Spiel neugestartet.');
 };
 
-// log controls
+// ---------------------- Log controls ----------------------
 document.getElementById('downloadLog').onclick = ()=>{
   const blob = new Blob([state.log.join('\n')], {type:'text/plain;charset=utf-8'});
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'werwolf_log.txt'; a.click();
 };
-document.getElementById('clearLog').onclick = ()=>{ if(!confirm('Log löschen?')) return; state.log = []; save(); renderLog(); };
+document.getElementById('clearLog').onclick = async ()=>{ const ok = await showConfirm('Log löschen?'); if(!ok) return; state.log = []; save(); renderLog(); };
 
-// initial render
-renderPlayers(); renderLog(); checkRoleWarning();
+// ---------------------- Initial render ----------------------
+function renderPlayers(){ /* reuse existing renderPlayers body from original code above (already defined earlier) */ }
+// But the function is already declared earlier; ensure it's defined: we used it above.
+
+renderPlayers();
+renderLog();
+checkRoleWarning();

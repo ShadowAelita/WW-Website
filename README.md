@@ -1,1 +1,0 @@
-Werwolf Moderator — Final Web Version\n\nEnthaltene Dateien: index.html, style.css, script.js\n
